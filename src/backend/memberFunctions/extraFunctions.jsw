@@ -1,0 +1,207 @@
+import wixData from 'wix-data';
+import { currentMember, authorization, authentication, members } from 'wix-members-backend';
+import { importFile, approvebyToken } from '@prospectorminerals/memberfunctions-backend';
+import crypto from 'crypto';
+
+const suppressAuth = { suppressAuth: true };
+
+export async function assignRoles(roles) {
+    const member = await currentMember.getMember({ fieldsets: ['FULL'] });
+    const memberId = member._id;
+    let promises = [];
+    if (roles.includes("Student")) {
+        const roleId = "a0077cc9-0484-41f4-bf70-614f09240711";
+        const personQuery = await wixData.query("People").eq("_id", memberId).find();
+        let person = personQuery.items.length > 0 ? personQuery.items[0] : { "_id": memberId };
+        console.log(member);
+        person.firstName = member.contactDetails.firstName;
+        person.lastName = member.contactDetails.lastName;
+        wixData.save("People", person, suppressAuth).then(() => {
+            promises.push(assignUserRole(roleId));
+        })
+    }
+    if (roles.includes("Learner")) {
+        const roleId = "bebb3f7d-a508-4aeb-a786-62b5e0a1b85c";
+        const personQuery = await wixData.query("MemberData").eq("_id", memberId).find();
+        let memberData = personQuery.items.length > 0 ? personQuery.items[0] : { "_id": memberId };
+        wixData.save("MemberData", memberData, suppressAuth).then(() => {
+            promises.push(assignUserRole(roleId));
+        });
+    }
+    if (roles.includes("Parent")) {
+        const roleId = "19668055-4bde-43bb-b325-4fef013696a0";
+        const personQuery = await wixData.query("MemberData").eq("_id", memberId).find();
+        let memberData = personQuery.items.length > 0 ? personQuery.items[0] : { "_id": memberId };
+        wixData.save("MemberData", memberData, suppressAuth).then(() => {
+            promises.push(assignUserRole(roleId));
+        });
+    }
+    if (roles.includes("Teacher")) {
+        const roleId = "2dd0a07a-79a5-4125-b2f8-10230cbffbf8";
+        const personQuery = await wixData.query("People").eq("_id", memberId).find();
+        let person = personQuery.items.length > 0 ? personQuery.items[0] : { "_id": memberId };
+        person.firstName = member.contactDetails.firstName;
+        person.lastName = member.contactDetails.lastName;
+        wixData.save("People", person, suppressAuth).then(() => {
+            promises.push(assignUserRole(roleId));
+        })
+    }
+    if (roles.includes("Administrator")) {
+        const roleId = "f9a99e39-98dc-4240-8e03-8bbbe3ff7362";
+        const personQuery = await wixData.query("People").eq("_id", memberId).find();
+        let person = personQuery.items.length > 0 ? personQuery.items[0] : { "_id": memberId };
+        person.firstName = member.contactDetails.firstName;
+        person.lastName = member.contactDetails.lastName;
+        wixData.save("People", person, suppressAuth).then(() => {
+            promises.push(assignUserRole(roleId));
+        })
+    }
+    if (roles.includes("Tester")) {
+        const roleId = "ba955865-f94c-4004-9ad0-a743d13feede";
+        promises.push(assignUserRole(roleId));
+    }
+
+    function assignUserRole(roleId) {
+        return authorization.assignRole(roleId, memberId).then(() => {
+            //if (role === "Teacher")
+            return { status: true };
+        }).catch((err) => {
+            throw new Error(err);
+        })
+    }
+    return Promise.all(promises).then((values) => {
+        return Promise.resolve({ status: true });
+    }).catch((err) => {
+        throw new Error(err);
+    })
+}
+
+export async function loginBackup(email, password) {
+    const sessionToken = await authentication.login(email, password);
+    return sessionToken;
+}
+
+export async function removeRoles(roles) {
+    const memberId = (await currentMember.getMember())._id;
+    let promises = [];
+    if (roles.includes("Student")) {
+        const roleId = "a0077cc9-0484-41f4-bf70-614f09240711";
+        promises.push(removeUserRole(roleId));
+    }
+    if (roles.includes("Learner")) {
+        const roleId = "bebb3f7d-a508-4aeb-a786-62b5e0a1b85c";
+        promises.push(removeUserRole(roleId));
+    }
+    if (roles.includes("Parent")) {
+        const roleId = "19668055-4bde-43bb-b325-4fef013696a0";
+        promises.push(removeUserRole(roleId));
+    }
+    if (roles.includes("Teacher")) {
+        const roleId = "2dd0a07a-79a5-4125-b2f8-10230cbffbf8";
+        promises.push(removeUserRole(roleId));
+    }
+    if (roles.includes("Administrator")) {
+        const roleId = "f9a99e39-98dc-4240-8e03-8bbbe3ff7362";
+        promises.push(removeUserRole(roleId));
+    }
+
+    function removeUserRole(roleId) {
+        return authorization.removeRole(roleId, memberId).then(() => {
+            return { status: true };
+        }).catch((err) => {
+            throw new Error(err);
+        })
+    }
+    return Promise.all(promises).then((values) => {
+        return Promise.resolve({ status: true });
+    }).catch((err) => {
+        throw new Error(err);
+    })
+}
+
+export async function fetchChildList() {
+    try {
+        const parentId = (await currentMember.getMember())._id;
+        const childrenMemberDataQuery = await wixData.query("MemberData").hasSome("parents", parentId).find({ suppressAuth: true });
+        const childrenIdList = childrenMemberDataQuery.items.map((obj) => obj._id);
+        const childrenList = await wixData.query("Members/PrivateMembersData").hasSome("_id", childrenIdList).find({ suppressAuth: true }); //.hasSome("MemberData-3", parentId).find({ suppressAuth: true });
+        const childInfoArray = childrenList.items.map((obj) => {
+            return {
+                "firstName": obj.firstName,
+                "lastName": obj.lastName,
+                "email": obj.loginEmail,
+                "profileImage": obj.picture || null,
+                "_id": obj._id
+            }
+        });
+        return { totalCount: childrenList.totalCount, items: childInfoArray };
+    } catch (error) {
+        return Promise.reject(error);
+    }
+}
+
+export function signUpNewMember(signupData, email, contactInfo, passwordParam) {
+    let password;
+    if (passwordParam) {
+        password = passwordParam;
+    } else {
+        password = crypto.randomBytes(32).toString('hex');
+    }
+    return authentication.register(email, password, { contactInfo: contactInfo })
+        .then(async (registrationResult) => {
+            let loginSettingsObj = {
+                "_id": registrationResult.member._id,
+                "_owner": registrationResult.member._id,
+                "memberIdReference": registrationResult.member._id,
+                "passwordEnabled": true
+            };
+            if (signupData.mode === "facebook") {
+                loginSettingsObj.facebookLoginEnabled = true,
+                    loginSettingsObj.facebookUserId = signupData.facebookUserId;
+            }
+            if (signupData.mode === "google") {
+                loginSettingsObj.googleLoginEnabled = true,
+                    loginSettingsObj.googleUserId = signupData.googleUserId;
+            }
+            wixData.insert("LoginSettings", loginSettingsObj, { suppressAuth: true });
+            if (registrationResult.status === "PENDING") {
+                return approvebyToken(registrationResult.approvalToken)
+                    .then((tokenobject) => {
+                        console.log()
+                        console.log('RegisterNewUser Pending Session Token - ' + tokenobject.sessionToken);
+                        return tokenobject.sessionToken;
+                    })
+            } else {
+                console.log('RegisterNewUser Automatic Session Token - ' + registrationResult.sessionToken);
+                return registrationResult.sessionToken;
+            }
+        })
+        .catch((error) => {
+            return Promise.reject(error);
+        })
+}
+
+export async function updateDataTest(member, prefs) {
+    const memberId = (await currentMember.getMember())._id;
+    return members.updateMember(memberId, member)
+        .then((member) => {
+            if (prefs.deletePhones === true) {
+                members.deleteMemberPhones(memberId).then(() => {
+                    return {
+                        status: true,
+                        member: member
+                    };
+                }).catch((error) => {
+                    return Promise.reject(error);
+                })
+            } else {
+                return {
+                    status: true,
+                    member: member
+                };
+            }
+        })
+        .catch((error) => {
+            return Promise.reject(error);
+        });
+}

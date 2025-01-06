@@ -1,0 +1,21 @@
+{
+  "devDependencies": {
+    "chart.js": "4.2.0",
+    "fuzzy-search": "3.2.1",
+    "@wix/cli": "^1.0.0",
+    "dayjs": "1.10.7",
+    "react": "16.14.0",
+    "eslint": "^8.25.0",
+    "@wix/eslint-plugin-cli": "^1.0.0",
+    "fuse.js": "6.4.3",
+    "he": "1.2.0",
+    "nanoid": "3.1.22",
+    "csvjson": "5.1.0",
+    "nodemailer": "6.8.0"
+  },
+  "scripts": {
+    "postinstall": "wix sync-types",
+    "dev": "wix dev",
+    "lint": "eslint ."
+  }
+}

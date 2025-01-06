@@ -1,0 +1,11 @@
+{
+    "contentCollectionKey": "EmailMagicLinks",
+    "expiryTime": "15",
+    "displayName": "Prospector Minerals",
+    "logoUrl": "https://static.wixstatic.com/shapes/2dcc6c_e8b2f7358df242588ebe075a94309bc4.svg",
+    "fromEmail": "prospectorminerals@prospectorminerals.com",
+    "smtphost": "smtp.mail.me.com",
+    "smtpport": "587",
+    "smtpuser": "ekeokigordon@icloud.com",
+    "baseUrl": "https://wwww.prospectorminerals.com"
+}

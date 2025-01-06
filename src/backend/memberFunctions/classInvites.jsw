@@ -1,0 +1,182 @@
+import wixData from 'wix-data';
+import { currentMember } from 'wix-members-backend';
+import { assignRoles } from 'backend/memberFunctions/extraFunctions.jsw';
+import { sendInstructorInviteEmail, sendStudentInviteEmail, sendAdminInviteEmail, sendStaffInviteEmail } from 'backend/emailFunctions.js';
+
+const suppressHooksandAuth = { suppressAuth: true, suppressHooks: true };
+
+export async function sendAdminInvite(inviteeEmail, organizationId) {
+    try {
+        const inviter = await currentMember.getMember();
+        const inviterMemberId = inviter._id;
+        const classObj = await wixData.get("Organizations", organizationId, suppressHooksandAuth);
+        const isAuthorized = await wixData.isReferenced("Organizations", "administrators", organizationId, inviterMemberId, suppressHooksandAuth);
+        if (isAuthorized) {
+            return sendAdminInviteEmail(inviteeEmail, classObj.title, `https://financedu.org/organizationadmininvite?email=${inviteeEmail}&classcode=${classObj.code}`).then(() => {
+                Promise.resolve();
+            });
+        }
+    } catch (error) {
+        Promise.reject(error);
+    }
+}
+
+export async function sendStudentInvite(inviteeEmail, classId) {
+    try {
+        const inviter = await currentMember.getMember();
+        const inviterMemberId = inviter._id;
+        const classObj = await wixData.get("Classes", classId, suppressHooksandAuth);
+        const isAuthorized = await wixData.isReferenced("Classes", "instructors", classId, inviterMemberId, suppressHooksandAuth);
+        if (isAuthorized) {
+            return sendStudentInviteEmail(inviteeEmail, classObj.title, `https://financedu.org/classinvite?email=${inviteeEmail}&classcode=${classObj.code}`).then(() => {
+                Promise.resolve();
+            });
+        }
+    } catch (error) {
+        Promise.reject(error);
+    }
+}
+
+export async function sendStudentInviteBulk(inviteeEmails, classId) {
+    try {
+        const inviter = await currentMember.getMember();
+        const inviterMemberId = inviter._id;
+        const classObj = await wixData.get("Classes", classId, suppressHooksandAuth);
+        const isAuthorized = await wixData.isReferenced("Classes", "instructors", classId, inviterMemberId, suppressHooksandAuth);
+        if (isAuthorized) {
+            return inviteeEmails.forEach((inviteeEmail) => {
+                return sendStudentInviteEmail(inviteeEmail, classObj.title, `https://financedu.org/classinvite?email=${inviteeEmail}&classcode=${classObj.code}`).then(() => {
+                    Promise.resolve();
+                });
+            });
+        }
+    } catch (error) {
+        Promise.reject(error);
+    }
+}
+
+export async function sendStaffInvite(inviteeEmail, classId) {
+    try {
+        const inviter = await currentMember.getMember();
+        const inviterMemberId = inviter._id;
+        const classObj = await wixData.get("Organizations", classId, suppressHooksandAuth);
+        const isAuthorized = await wixData.isReferenced("Organizations", "administrators", classId, inviterMemberId, suppressHooksandAuth);
+        if (isAuthorized) {
+            return sendStaffInviteEmail(inviteeEmail, classObj.title, `https://financedu.org/classinvite?email=${inviteeEmail}&classcode=${classObj.code}`).then(() => {
+                Promise.resolve();
+            });
+        }
+    } catch (error) {
+        Promise.reject(error);
+    }
+}
+
+export async function generateAdminInvite(inviteeEmail, classId) {
+    try {
+        const inviter = await currentMember.getMember({ fieldsets: ['FULL'] });
+        const inviterName = `${inviter.contactDetails.firstName} ${inviter.contactDetails.lastName}`;
+        const inviterEmail = inviter.loginEmail;
+        const inviterMemberId = inviter._id;
+        const inviteeQuery = await wixData.query("Members/PrivateMembersData").eq("loginEmail", inviteeEmail).find({ suppressAuth: true });
+        if (inviteeQuery.items.length > 0) {
+            const invitee = inviteeQuery.items[0];
+            const className = (await wixData.get("Organizations", classId, suppressHooksandAuth)).title;
+            const isAuthorized = await wixData.isReferenced("Organizations", "administrators", classId, inviterMemberId, suppressHooksandAuth);
+            if (isAuthorized) {
+                const item = await wixData.insert("OrganizationInvitations", {
+                    "inviterName": inviterName,
+                    "inviterEmail": inviterEmail,
+                    "inviterMemberId": inviterMemberId,
+                    "inviteeMemberId": invitee._id,
+                    "expiryDate": new Date().setDate(new Date().getDate() + 2),
+                    "classId": classId,
+                    "class": classId
+                }, suppressHooksandAuth);
+                return sendAdminInviteEmail(invitee.loginEmail, className, `https://www.financedu.org/invite/admin?inviteId=${item._id}`).then(() => {
+                    return Promise.resolve(inviter);
+                });
+            } else {
+                throw new Error('forbidden');
+            }
+        } else {
+            return Promise.reject("No User");
+        }
+    } catch (error) {
+        return Promise.reject(error);
+    }
+}
+
+export async function generateInstructorInvite(inviteeEmail, classId) {
+    try {
+        const inviter = await currentMember.getMember({ fieldsets: ['FULL'] });
+        const inviterName = `${inviter.contactDetails.firstName} ${inviter.contactDetails.lastName}`;
+        const inviterEmail = inviter.loginEmail;
+        const inviterMemberId = inviter._id;
+        const inviteeQuery = await wixData.query("Members/PrivateMembersData").eq("loginEmail", inviteeEmail).find({ suppressAuth: true });
+        if (inviteeQuery.items.length > 0) {
+            const invitee = inviteeQuery.items[0];
+            const className = (await wixData.get("Classes", classId, suppressHooksandAuth)).title;
+            const isAuthorized = await wixData.isReferenced("Classes", "instructors", classId, inviterMemberId, suppressHooksandAuth);
+            if (isAuthorized) {
+                const item = await wixData.insert("ClassInvitations", {
+                    "inviterName": inviterName,
+                    "inviterEmail": inviterEmail,
+                    "inviterMemberId": inviterMemberId,
+                    "inviteeMemberId": invitee._id,
+                    "expiryDate": new Date().setDate(new Date().getDate() + 2),
+                    "classId": classId,
+                    "class": classId
+                }, suppressHooksandAuth);
+                return sendInstructorInviteEmail(invitee.loginEmail, className, `https://www.financedu.org/invite/instructor?inviteId=${item._id}`).then(() => {
+                    return Promise.resolve(inviter);
+                });
+            } else {
+                throw new Error('forbidden');
+            }
+        } else {
+            return Promise.reject("No User");
+        }
+    } catch (error) {
+        return Promise.reject(error);
+    }
+}
+
+export async function connectInstructorAccountbyInvitation(inviteId) {
+    const inviteObj = await wixData.get("ClassInvitations", inviteId, { suppressAuth: true });
+    const member = await currentMember.getMember();
+    const inviteeMemberId = inviteObj.inviteeMemberId;
+    const inviterMemberId = inviteObj.inviterMemberId;
+    const classId = inviteObj.classId;
+    if (member._id === inviterMemberId) {
+        return wixData.insertReference("Classes", "instructor", classId, inviteeMemberId, { suppressAuth: true }).then(async () => {
+            wixData.remove("ClassInvitations", inviteId, { suppressAuth: true });
+            const classObj = await wixData.get("Classes", classId, suppressHooksandAuth)
+            return { "status": true, 'classInfo': classObj };
+        }).catch((error) => {
+            throw new Error(error);
+        });
+    } else {
+        throw new Error('forbidden');
+    }
+}
+
+export async function connectAdminAccountbyInvitation(inviteId) {
+    const inviteObj = await wixData.get("OrganizationInvitations", inviteId, { suppressAuth: true });
+    const member = await currentMember.getMember();
+    const inviteeMemberId = inviteObj.inviteeMemberId;
+    const inviterMemberId = inviteObj.inviterMemberId;
+    const classId = inviteObj.classId;
+    if (member._id === inviterMemberId) {
+        //return Promise.all([wixData.insertReference("Organizations", "administrators", classId, inviteeMemberId, { suppressAuth: true }), wixData.remove("OrganizationInvitations", inviteId, { suppressAuth: true }), assignRoles(["Administrator"]) ]).then(async () => {
+        return wixData.insertReference("Organizations", "administrators", classId, inviteeMemberId, { suppressAuth: true }).then(async () => {
+            return Promise.all([assignRoles(["Administrator"]), wixData.remove("OrganizationInvitations", inviteId, { suppressAuth: true })]).then(async () => {
+                const classObj = await wixData.get("Organizations", classId, suppressHooksandAuth)
+                return { "status": true, 'organizationInfo': classObj };
+            });
+        }).catch((error) => {
+            throw new Error(error);
+        });
+    } else {
+        throw new Error('forbidden');
+    }
+}

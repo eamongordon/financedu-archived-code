@@ -1,0 +1,5 @@
+{
+    "redirectUri": "/fblogin",
+    "appliedTokenUrl": "/social-login",
+    "enableResultUrl": "/account/settings"
+}

@@ -1,0 +1,5 @@
+{
+    "redirectUri": "/social-login",
+    "loginEnableUri": "/enableGoogleLogin",
+    "enableResultUrl": "/account/settings"
+}

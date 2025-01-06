@@ -1,0 +1,88 @@
+import wixData from 'wix-data';
+
+export async function countActivities() {
+    const activityQuery = await wixData.query("Activities").eq("type", "Quiz").find();
+    return activityQuery.totalCount;
+}
+
+export async function getAllActivityProgress() {
+    const allLearnerSubmissions = await wixData.query("LearnerSubmissionData").find({ suppressAuth: true, suppressHooks: true });
+    return allLearnerSubmissions.items;
+}
+
+export async function getLessonActivitiesTest() {
+    try {
+        const activities = await wixData.queryReferenced("Lessons", "5d54fddb-17fc-46e5-a9dd-85c1b2d03dc3", "Activities", {suppressAuth: true});
+        return activities;
+    } catch (error) {
+        throw new Error(error);
+    }
+}
+
+export async function fetchCommunityServiceHoursTotal(userId) {
+    const allSessions = await wixData.query("TestingSessions").eq("_owner", userId).find({ suppressAuth: true, suppressHooks: true });
+    let totalSessionSeconds = 0;
+    allSessions.items.forEach((obj) => {
+        const millisecondDiff = new Date(obj.endDate).getTime() - new Date(obj.startDate).getTime();
+        const totalSeconds = Math.floor(millisecondDiff / 1000);
+        totalSessionSeconds += totalSeconds;
+    });
+    if (totalSessionSeconds > 0) {
+        const totalSessionMinutes = Math.floor(totalSessionSeconds / 60);
+        const totalSessionHours = Math.floor(totalSessionMinutes / 60);
+        const sessionMinutes = totalSessionMinutes - ((60) * totalSessionHours);
+        return `${totalSessionHours} ${totalSessionHours === 1 ? 'hr' : 'hrs'} ${sessionMinutes} ${sessionMinutes === 1 ? 'min' : 'mins'}`;
+    } else {
+        return 'No Time'
+    }
+}
+
+export async function fixClassRef() {
+    try {
+        const classItem = await wixData.get("Classes", "4b76b786-994e-422a-a31b-2ed357b230e5", { suppressAuth: true, suppressHooks: true });
+        const classItemStudents = [
+            "99886c45-a4f9-45b7-ac89-990d2ef68f83",
+            "ce42405a-8a61-4490-a09a-0db88800ec07",
+            "9d94f5bf-206b-435d-80a4-514006d3c577",
+            "8d8874a2-746a-46a3-8130-5446067e7c14",
+            "bb25e556-b883-44fb-b77b-e4ce1f1a342f",
+            "1b1b7d9c-f78b-47d6-a3d2-1dfa3b0cac68",
+            "4a87dc3d-04ea-4162-ba33-e399f79665b7",
+            "5fba9299-a00d-4ab2-9d02-ac2a9d044f59",
+            "188d02f0-bc9b-40e0-8e1c-2ff774b950a6",
+            "cc673581-591a-44ae-8b5e-2228ac05eef1",
+            "1da2eacc-7ea1-49a9-acc1-56e7d0de14fe",
+            "ea3c0452-0c81-4e65-993b-60415ae6abc0",
+            "9e0de7b4-6a6f-4f7c-93e7-5dbddc8f5416",
+            "62bacb61-e2fb-45f0-bb48-6387f9adf379",
+            "8828feaa-cdec-4588-9bea-a8dbe0554c92",
+            "a9493f9e-33d7-4cb6-a851-651bcb726a93",
+            "7ada9329-8c57-4c22-a659-e9bb6f1a2e7d",
+            "eccb3d4aa6827ac3605ee2344add6b754a4c293ea27fec6ca7fe8e8d408d2d8dc0d18a51d977c60f4dbac538bbe334551e60994d53964e647acf431e4f798bcd09d62af9cbf3ffff7e9e43fbba2fa8d9962059a210429e8b3c1e5bc14806eed5d4e025f4113f43e654acde7b0d71ae894f61dd0bcd88dab7eda2c14014d399ef3e651f6cf8c065eca233537584f3f073",
+            "ed8a002f-d698-4120-b0cd-e70108900388",
+            "5922a602-fb75-4a80-a599-5da09afe6df4",
+            "1be8af7d-738b-4f29-ac23-c631772d0491"
+        ];
+
+        const res = (await wixData.query("People").hasSome("_id", classItemStudents).find({ suppressAuth: true, suppressHooks: true })).items.map((obj) => obj.name) //await wixData.insert("Classes", {"code": "qzzyz", "color": "#FEC178", "_owner": "3f92d5c4-c346-4c23-b300-0a8f4bf6636f"}, {suppressAuth: true, suppressHooks: true}) //wixData.insertReference("Classes", "students", classItem._id, classItemStudents, {suppressAuth: true, suppressHooks: true});
+        return res;
+    } catch (error) {
+        throw new Error(error)
+    }
+
+}
+
+export async function mapStandardsActivities() {
+    try {
+        const lessonList = await wixData.query("Lessons").limit(50).include("standards").include("Activities").find();
+        lessonList.items.forEach((lesson) => {
+            const standardsList = lesson.standards.map((obj) => obj._id);
+            lesson.Activities.forEach((activity) => {
+                wixData.insertReference("Activities", "standards", activity._id, standardsList);
+            });
+        });
+        return true;
+    } catch (err) {
+        throw new Error(err);
+    }
+}

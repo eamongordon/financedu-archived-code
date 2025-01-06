@@ -1,0 +1,366 @@
+import { members, authentication, currentMember, authorization } from 'wix-members-backend';
+import { mediaManager } from 'wix-media-backend';
+import wixData from 'wix-data';
+import crypto from 'crypto';
+
+const queryOptions = { suppressAuth: true };
+
+export function loginClassic(email, password) {
+    return authentication.login(email, password)
+        .then((sessionToken) => {
+            return sessionToken;
+        })
+        .catch((error) => {
+            return Promise.reject(new Error(error));
+        });
+}
+
+export function updateData(id, member, prefs) {
+    /*
+  if (member.contactDetails.phones[0]){ 
+  console.log(member.contactDetails.phones[0]);
+	return members.updateMember(id, member)
+    .then((member) => {
+		  return {
+        status: true,
+        member: member
+      };
+    })
+    .catch((error) => {
+      return {
+        status: false,
+        error: error
+      }
+    })
+  } else {
+    */
+    //delete member.contactDetails.phones;
+    return members.updateMember(id, member)
+        .then((member) => {
+            if (prefs.deletePhones === true) {
+                members.deleteMemberPhones(id);
+            }
+            return {
+                status: true,
+                member: member
+            };
+        })
+        .catch((error) => {
+            return {
+                status: false,
+                error: error
+            }
+        })
+    //}
+}
+
+export async function checkMember(email) {
+    try {
+        const queryResults = await wixData.query('Members/PrivateMembersData').eq('loginEmail', email).find(queryOptions);
+        if (queryResults && queryResults.items && queryResults.items.length > 0) {
+            return { results: true, id: queryResults.items[0]._id };
+        } else {
+            return { results: false };
+        }
+    } catch (err) {
+        throw new Error('original error - ' + err.message);
+    }
+}
+
+export async function socialLoginUpdateMember(data) {
+    const namearray = data.name.split(" ");
+    const firstName = namearray[0];
+    const lastName = namearray[1];
+    checkMember()
+        .then((res) => {
+            if (res.results === true) {
+                //importFile(data.avatar)
+                //.then((fileData) => {
+                console.log(firstName + lastName);
+                let member = {
+                    contactDetails: {
+                        firstName: firstName,
+                        lastName: lastName
+                    },
+                    /*
+          profile: {
+            profilePhoto: {
+				      url: fileData.fileUrl
+			      }
+          }
+          */
+                }
+                console.log(res.id);
+                updateData(res.id, member).then((message) => {
+                    console.log('UpdatedData - ' + message);
+                }).catch((err) => {
+                    console.log(err);
+                });
+                //}).catch( (err) => {
+                //console.log(err);
+                //});
+
+            }
+        })
+}
+
+export async function generateToken(email, contactInfo) {
+    const { firstName, lastName, picture } = contactInfo;
+    if (email) {
+        const queryResults = await wixData.query('Members/PrivateMembersData').eq('loginEmail', email).find(queryOptions);
+        if (queryResults && queryResults.items && queryResults.items.length > 0) {
+            return authentication.generateSessionToken(email)
+                .then((sessionToken) => {
+                    return {
+                        sessionToken: sessionToken,
+                        approved: true
+                    };
+                })
+                .catch((err) => {
+                    console.log(err);
+                });
+        } else {
+            let password = crypto.randomBytes(32).toString('hex');
+            let profilePicObj = await importFile(picture);
+            let profilePicUrl = `https://static.wixstatic.com/media/${profilePicObj.fileName}`;
+            return registerNewUser(email, password, { contactInfo: { firstName: firstName, lastName: lastName, picture: profilePicUrl }, })
+                .then((sessionToken) => {
+                    console.log('New User - ' + sessionToken);
+                    return {
+                        sessionToken: sessionToken,
+                        approved: true
+                    };
+                });
+        }
+    } else {
+        Promise.reject(new Error('No Email Provided'));
+    }
+}
+
+export function importFile(url) {
+    return mediaManager.importFile(
+            "/Member Profile Pics",
+            url, {
+                "mediaOptions": {
+                    "mediaType": "image"
+                },
+                "metadataOptions": {
+                    "isPrivate": false,
+                    "isVisitorUpload": true,
+                },
+            }
+        )
+        .then((filedata) => {
+            return filedata;
+        })
+        .catch((err) => {
+            console.log('profilePhoto Upload Unsuccesful -' + err + url)
+        });
+}
+
+export async function checkMemberData(userId) {
+    wixData.query("FavoriteItems")
+        .eq("title", userId)
+        .find({
+            suppressAuth: true
+        })
+        .then((results) => {
+            if (results.items.length === 0) {
+                insertfavorites(userId);
+            }
+        });
+    wixData.query("MemberAPIUsage")
+        .eq("title", userId)
+        .find({
+            suppressAuth: true
+        })
+        .then((results) => {
+            if (results.items.length === 0) {
+                insertmemberusage(userId);
+            }
+        });
+}
+
+export function insertmemberusage(userId) {
+    var resetTime = new Date()
+    resetTime.setDate(resetTime.getDate() + 30);
+    const devInsert = {
+        "title": userId,
+        "id": userId,
+        "_id": userId,
+        "limit": 200,
+        "requests": 0,
+        "resetTime": resetTime,
+    }
+    // add the item to the collection
+    return wixData.insert("MemberAPIUsage", devInsert, { suppressAuth: true })
+        .then((res) => {
+            return { status: true }
+        })
+        .catch((err) => {
+            return { status: false, error: err };
+        });
+}
+
+export function insertfavorites(userId) {
+    const favInsert = {
+        "userId": userId,
+        "_id": userId,
+    }
+    return wixData.insert("FavoriteItems", favInsert, { suppressAuth: true })
+        .then((res) => {
+            return { status: true }
+        })
+        .catch((err) => {
+            return { status: false, error: err };
+        });
+}
+
+export function registerNewUser(email, password, options) {
+    return authentication.register(email, password, options)
+        .then((registrationResult) => {
+            if (registrationResult.status === "PENDING") {
+                return approvebyToken(registrationResult.approvalToken)
+                    .then((tokenobject) => {
+                        console.log()
+                        console.log('RegisterNewUser Pending Session Token - ' + tokenobject.sessionToken);
+                        return { token: tokenobject.sessionToken, member: registrationResult.member };
+                    })
+            } else {
+                console.log('RegisterNewUser Automatic Session Token - ' + registrationResult.sessionToken);
+                return registrationResult.sessionToken;
+            }
+        })
+        .catch((error) => {
+            Promise.reject(error);
+        })
+}
+
+export function approvebyToken(approvalToken) {
+    return authentication.approveByToken(approvalToken)
+        .then((sessionToken) => {
+            console.log('approvebyToken given SessionToken - ' + sessionToken)
+            return {
+                sessionToken: sessionToken,
+                approved: true
+            }
+        })
+        .catch((error) => {
+            console.error(error);
+        })
+}
+
+export function sendSetPasswordEmailFunction(email, options) {
+    return authentication.sendSetPasswordEmail(email)
+        .then(() => {
+            Promise.resolve();
+        })
+        .catch((error) => {
+            Promise.reject(error);
+        })
+}
+
+// Example options value:
+// {
+//    contactInfo: {
+//      firstName: 'Javier',
+//      lastName: 'Doe'
+//    },
+//    privacyStatus: 'PUBLIC'
+// }
+
+/* Promise resolves to:
+ * {
+ *   "member": {
+ *     "_id": "efaaf13f-934e-4449-b0c2-304030767671",
+ *     "createdDate": "2021-08-01T12:28:42Z",
+ *     "updatedDate": "2021-08-01T12:28:41.847Z",
+ *     "status": "UNKNOWN",
+ *     "contactId": "efaaf13f-934e-4449-b0c2-304030767671",
+ *     "profile": {
+ *       "nickname": "Javier Doe",
+ *       "slug": "javierdoe"
+ *     },
+ *     "privacyStatus": "UNKNOWN",
+ *     "activityStatus": "UNKNOWN"
+ *   },
+ *   "status": "PENDING",
+ *   "approvalToken": "JWS.eyJraWQiOiJSc012MmV3MiIsImFsZyI6IkhTMjU2In0.eyJkYXRhIjoie1wiaWRcIjpcImVmYWFmMTNmLTkzNGUtNDQ0OS1iMGMyLTMwNDAzMDc2NzY3MVwiLFwiY29sbGVjdGlvbklkXCI6XCI5YmVjNThlNi02NDExLTQ5OTEtOGU1ZC0wYWRhOTE4MmI5NWVcIn0iLCJpYXQiOjE2Mjc4MjA5MjEsImV4cCI6MTYyNzkyODkyMX0.zOuE8ZXRBQT4tPPFqvseE8xKm6kHrmHG3Lrndz7l7Ng"
+ * }
+ */
+
+/* Returns a promise that resolves to:
+ *
+ * {
+ *   "fileName": "f6c0f9_tg439f4475a749e181dd14407fdbd37e~mv2.jpg",
+ *   "fileUrl": "media/f6c0f9_tg439f4475a749e181dd14407fdbd37e~mv2.jpg",
+ *   "hash": "Ew00kXbu4Zt33rzjcWa6Ng==",
+ *   "sizeInBytes": 51085,
+ *   "mimeType": "image/jpeg",
+ *   "mediaType": "image",
+ *   "isPrivate": false,
+ *   "parentFolderId": "2bf470f5be194b319cdb2accc3278ff9",
+ *   "originalFileName": "my-image.jpg",
+ *   "sourceUrl": "https://somedomain.com/img/original-name.jpg",
+ *   "opStatus": "IN-DOWNLOAD-QUEUE"
+ * }
+ */
+
+export function retrieveMemberData() {
+    return currentMember.getMember({ fieldsets: ['FULL'] });
+}
+
+export function createPersonItem(userId, firstName, lastName) {
+    const personObj = {
+        "_id": userId,
+        "firstName": firstName,
+        "lastName": lastName,
+        "name": firstName + ' ' + lastName,
+    }
+    wixData.insert("People", personObj);
+}
+// Example options value:
+// {
+//    contactInfo: {
+//      firstName: 'Javier',
+//      lastName: 'Doe'
+//    },
+//    privacyStatus: 'PUBLIC'
+// }
+
+/* Promise resolves to:
+ * {
+ *   "member": {
+ *     "_id": "efaaf13f-934e-4449-b0c2-304030767671",
+ *     "createdDate": "2021-08-01T12:28:42Z",
+ *     "updatedDate": "2021-08-01T12:28:41.847Z",
+ *     "status": "UNKNOWN",
+ *     "contactId": "efaaf13f-934e-4449-b0c2-304030767671",
+ *     "profile": {
+ *       "nickname": "Javier Doe",
+ *       "slug": "javierdoe"
+ *     },
+ *     "privacyStatus": "UNKNOWN",
+ *     "activityStatus": "UNKNOWN"
+ *   },
+ *   "status": "PENDING",
+ *   "approvalToken": "JWS.eyJraWQiOiJSc012MmV3MiIsImFsZyI6IkhTMjU2In0.eyJkYXRhIjoie1wiaWRcIjpcImVmYWFmMTNmLTkzNGUtNDQ0OS1iMGMyLTMwNDAzMDc2NzY3MVwiLFwiY29sbGVjdGlvbklkXCI6XCI5YmVjNThlNi02NDExLTQ5OTEtOGU1ZC0wYWRhOTE4MmI5NWVcIn0iLCJpYXQiOjE2Mjc4MjA5MjEsImV4cCI6MTYyNzkyODkyMX0.zOuE8ZXRBQT4tPPFqvseE8xKm6kHrmHG3Lrndz7l7Ng"
+ * }
+ */
+
+/* Returns a promise that resolves to:
+ *
+ * {
+ *   "fileName": "f6c0f9_tg439f4475a749e181dd14407fdbd37e~mv2.jpg",
+ *   "fileUrl": "media/f6c0f9_tg439f4475a749e181dd14407fdbd37e~mv2.jpg",
+ *   "hash": "Ew00kXbu4Zt33rzjcWa6Ng==",
+ *   "sizeInBytes": 51085,
+ *   "mimeType": "image/jpeg",
+ *   "mediaType": "image",
+ *   "isPrivate": false,
+ *   "parentFolderId": "2bf470f5be194b319cdb2accc3278ff9",
+ *   "originalFileName": "my-image.jpg",
+ *   "sourceUrl": "https://somedomain.com/img/original-name.jpg",
+ *   "opStatus": "IN-DOWNLOAD-QUEUE"
+ * }
+ */

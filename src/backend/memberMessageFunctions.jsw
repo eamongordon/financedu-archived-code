@@ -1,0 +1,60 @@
+import wixData from 'wix-data';
+
+const queryopts = { "suppressAuth": true };
+
+export async function updateReadData(messageId) {
+    const queryResults = await wixData.queryReferenced("Messages", messageId, "toPeople", queryopts);
+    const queryItems = queryResults.items;
+    queryItems.forEach((person) => {
+        const itemArray = person.messagesData.filter(obj => obj.id === messageId);
+        if (itemArray.length > 0) {
+            person.messagesData = person.messagesData.map((obj, index) => {
+                if (obj.id === messageId) {
+                    return { ...obj, read: false };
+                } else {
+                    return obj;
+                }
+            });
+
+        } else {
+            person.messagesData.push({
+                "id": messageId,
+                "starred": false,
+                "read": false,
+                "category": "inbox"
+            });
+        }
+    });
+    //setTimeout(() => {
+    wixData.bulkSave("People", queryItems, queryopts).catch((error) => {
+        console.log(error);
+    })
+    //}, 500);
+}
+/*
+
+function updateResponseData(idtoUpdate) {
+    person.messagesData = person.messagesData.map((obj, index) => {
+        if (obj.id === idtoUpdate) {
+            switch (action) {
+            case 'star':
+                return { ...obj, starred: true };
+                break;
+            case 'unstar':
+                return { ...obj, starred: false };
+                break;
+            case 'read':
+                return { ...obj, read: true };
+                break;
+            case 'archive':
+                return { ...obj, category: "archived" };
+                break;
+            case 'delete':
+                return { ...obj, category: "deleted" };
+                break;
+            }
+        }
+        return obj;
+    });
+
+*/

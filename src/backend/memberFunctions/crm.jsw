@@ -1,0 +1,19 @@
+import { contacts } from 'wix-crm-backend';
+import { currentMember } from 'wix-members-backend';
+
+export async function labelSchoolPlatformEmailList() {
+  const memberId = (await currentMember.getMember())._id;
+  const labelKeys = [
+    "custom.school-platform-email-waiting-list"
+  ];
+  const options = {
+    suppressAuth: false
+  };
+  return contacts.labelContact(memberId, labelKeys, options)
+    .then((labeledContact) => {
+      return labeledContact;
+    })
+    .catch((error) => {
+      throw new Error(error);
+    });
+}

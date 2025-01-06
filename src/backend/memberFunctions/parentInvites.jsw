@@ -1,0 +1,144 @@
+import wixData from 'wix-data';
+//import { currentUser } from 'wix-users-backend';
+import { authentication, currentMember, authorization } from 'wix-members-backend';
+import { sendParentInviteEmail } from 'backend/emailFunctions.js';
+import { registerNewUser, approvebyToken } from '@prospectorminerals/memberfunctions-backend';
+
+const options = { 'suppressAuth': true };
+
+export async function retrieveInviteInfo(inviteId) {
+    try {
+        const memberData = await currentMember.getMember();
+        const queryResults = await wixData.query("ParentInvitations").eq("_id", inviteId).descending("_createdDate").find({ suppressAuth: true });
+        if (queryResults.items.length > 0 && queryResults.items[0].childMemberId === memberData._id) {
+            const requestDateFormatted = queryResults.items[0]._createdDate.toLocaleDateString('en-us', { year: "numeric", month: "long", day: "numeric" });
+            const resultData = {
+                "parentName": queryResults.items[0].parentName,
+                "parentEmail": queryResults.items[0].parentEmail,
+                "requestDateFormatted": requestDateFormatted,
+                "childMemberId": queryResults.items[0].childMemberId,
+                "parentMemberId": queryResults.items[0].parentMemberId,
+                "inviteId": queryResults.items[0]._id
+            }
+            return resultData;
+        }
+    } catch (err) {
+        throw new Error(err)
+    }
+}
+
+export async function generateParentInvite(childEmail) {
+    try {
+        const parent = await currentMember.getMember({ fieldsets: ['FULL'] });
+        const parentName = `${parent.contactDetails?.firstName} ${parent.contactDetails?.lastName}`;
+        const parentEmail = parent.loginEmail;
+        const parentMemberId = parent._id;
+        const child = (await wixData.query("Members/PrivateMembersData").eq("loginEmail", childEmail).find({ suppressAuth: true })).items[0];
+        const item = await wixData.insert("ParentInvitations", {
+            "parentName": parentName,
+            "parentEmail": parentEmail,
+            "parentMemberId": parentMemberId,
+            "childMemberId": child._id,
+            "expiryDate": new Date().setDate(new Date().getDate() + 2)
+        });
+        return sendParentInviteEmail(child.loginEmail, `https://www.financedu.org/parentinvite?inviteId=${item._id}`).then(() => {
+            Promise.resolve();
+        }).catch((error) => {
+            return Promise.reject(error);
+        })
+    } catch (error) {
+        return Promise.reject(error);
+    }
+}
+
+export async function connectChildParentAccountbyInvitation(inviteId) {
+    const inviteObj = await wixData.get("ParentInvitations", inviteId, { suppressAuth: true });
+    const member = await currentMember.getMember();
+    const childMemberId = inviteObj.childMemberId;
+    const parentMemberId = inviteObj.parentMemberId;
+    if (member._id === childMemberId) {
+        return wixData.insertReference("MemberData", "parents", childMemberId, parentMemberId, options).then(() => {
+            wixData.remove("ParentInvitations", inviteId, { suppressAuth: true });
+            return { "status": true };
+        }).catch((error) => {
+            throw new Error(error);
+        });
+    } else {
+        throw new Error('forbidden');
+    }
+}
+
+export async function connectChildParentAccountDirectly(childInfo, parentId) {
+    const { childEmail, childPassword } = childInfo;
+    try {
+        const sessionToken = await authentication.login(childEmail, childPassword);
+        if (sessionToken) {
+            const child = (await wixData.query("Members/PrivateMembersData").eq("loginEmail", childEmail).find()).items[0];
+            wixData.insertReference("MemberData", "parents", child._id, parentId, options);
+            return { "status": true };
+        } else {
+            Promise.reject('Unable to Login');
+        }
+    } catch (error) {
+        Promise.reject(error);
+    }
+}
+
+export function registerNewUserSubstitute(email, password, options) {
+    return authentication.register(email, password, options)
+        .then((registrationResult) => {
+            const loginSettingsObj = {
+                "_id": registrationResult.member._id,
+                "_owner": registrationResult.member._id,
+                "memberIdReference": registrationResult.member._id,
+                "passwordEnabled": true
+            };
+            wixData.insert("LoginSettings", loginSettingsObj, { suppressAuth: true });
+            if (registrationResult.status === "PENDING") {
+                return approvebyToken(registrationResult.approvalToken)
+                    .then((tokenobject) => {
+                        console.log('RegisterNewUser Pending Session Token - ' + tokenobject.sessionToken);
+                        return { member: registrationResult.member, token: tokenobject.sessionToken };
+                    })
+            } else {
+                console.log('RegisterNewUser Automatic Session Token - ' + registrationResult.sessionToken);
+                return { member: registrationResult.member, token: registrationResult.sessionToken };
+            }
+        })
+        .catch((error) => {
+            Promise.reject(error);
+        })
+}
+
+export async function disconnectChildParentAccount(childMemberId) {
+    const parentMemberId = (await currentMember.getMember())._id;
+    return wixData.removeReference("MemberData", "parents", parentMemberId, childMemberId, options).then(() => {
+        return Promise.resolve();
+    }).catch((error) => {
+        Promise.reject(error);
+    })
+}
+
+export function createChildAccount(email, password, options) {
+    return registerNewUserSubstitute(email, password, options)
+        .then(async function (result) {
+            const parent = await currentMember.getMember();
+            const roleId = "bebb3f7d-a508-4aeb-a786-62b5e0a1b85c";
+            const memberData = {
+                "_id": result.member._id
+            }
+            return wixData.save("MemberData", memberData).then(() => {
+                return authorization.assignRole(roleId, result.member._id).then(() => {
+                    return connectChildParentAccountDirectly({ childEmail: email, childPassword: password }, parent._id).then(() => {
+                        return Promise.resolve();
+                    }).catch((error) => {
+                        return Promise.reject(error);
+                    })
+                }).catch((error) => {
+                    return Promise.reject(error);
+                });
+            });
+        }).catch((error) => {
+            return Promise.reject(error);
+        });
+}

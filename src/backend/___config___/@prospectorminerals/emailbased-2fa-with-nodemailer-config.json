@@ -1,0 +1,11 @@
+{
+    "contentCollectionKey": "EmailVerificationCodes",
+    "expiryTime": "15",
+    "displayName": "<DISPLAY_NAME_(i.e.My Buisness)>",
+    "logoUrl": "<SITE_LOGO_URL>",
+    "fromEmail": "<FROM_EMAIL(i.e.(example@mydomain.com))>",
+    "smtphost": "<SMTP_HOST_(i.e.(smtp.mail.me.com))>",
+    "smtpport": "<SMTP_PORT_(i.e.587)>",
+    "smtpuser": "<SMTP_USERNAME_(i.e.(myemail@mydomain.com))>",
+    "smtppassword": "<SMTP_PASSWORD>"
+}
